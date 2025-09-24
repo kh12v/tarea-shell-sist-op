@@ -4,6 +4,8 @@
 #include <string.h>
 #include <unistd.h>
 #include <sys/wait.h>
+#include <signal.h>
+#include <sys/types.h>
 
 
 char** parse_command(char *cmd) {
@@ -74,39 +76,246 @@ int main() {
 
                 char** argv = parse_command(commands[i]);
 
-                int redirect_append = 0;
-                char* outfile = NULL;
+                if(argv[0] && strcmp(argv[0], "miprof") == 0){
+                    //seccion con myprof
+                    if(argv[1] && strcmp(argv[1], "ejec") == 0){
+                        //muestra a pantalla
 
-                for (int k = 0; argv[k]; k++) {
-                    if (strcmp(argv[k], ">") == 0 || strcmp(argv[k], ">>") == 0) {
-                        redirect_append = (strcmp(argv[k], ">>") == 0);
-                        outfile = argv[k+1];
-                        argv[k] = NULL;
-                        break;
-                    }
-                }
 
-                if (outfile) {
-                    int fd;
-                    if (redirect_append)
-                        fd = open(outfile, O_WRONLY | O_CREAT | O_APPEND, 0644);
-                    else
-                        fd = open(outfile, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+                        int redirect_append = 0;
+                        char* outfile = NULL;
 
-                    if (fd < 0) {
-                        perror("open");
+                        for (int k = 2; argv[k]; k++) {
+                            if (strcmp(argv[k], ">") == 0 || strcmp(argv[k], ">>") == 0) {
+                                redirect_append = (strcmp(argv[k], ">>") == 0);
+                                outfile = argv[k+1];
+                                argv[k] = NULL;
+
+
+                                break;
+                            }
+                        }
+
+                        //construccion con sin simbolos
+                        char *with_time[64];
+                        int i = 0;
+                        with_time[i] = "time";
+                        i++;
+
+                        for (int j = 2; argv[j] != NULL; j++) {
+                            with_time[i] = argv[j];
+                            i++;
+                        }
+                        with_time[i] = NULL;
+
+
+                        if (outfile) {
+                            int fd;
+                            if (redirect_append)
+                                fd = open(outfile, O_WRONLY | O_CREAT | O_APPEND, 0644);
+                            else
+                                fd = open(outfile, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+
+                            if (fd < 0) {
+                                perror("open");
+                                exit(1);
+                            }
+                            if (dup2(fd, STDOUT_FILENO) == -1) {
+                                perror("dup2 redir");
+                                exit(1);
+                            }
+                            close(fd);
+                        }
+
+                        execvp(with_time[0], with_time);
+                        perror("execvp");
                         exit(1);
-                    }
-                    if (dup2(fd, STDOUT_FILENO) == -1) {
-                        perror("dup2 redir");
-                        exit(1);
-                    }
-                    close(fd);
-                }
 
-                execvp(argv[0], argv);
-                perror("execvp");
-                exit(1);
+                    }
+                    else if (argv[1] && strcmp(argv[1], "ejecsave") == 0){
+                        //guarda en un archivo
+
+                        int redirect_append = 0;
+                        char* outfile = NULL;
+                        FILE *archivo; 
+                        char nombre[] = argv[2];
+                        archivo = fopen(nombre, "a");
+
+                        for (int k = 3; argv[k]; k++) {
+                            if (strcmp(argv[k], ">") == 0 || strcmp(argv[k], ">>") == 0) {
+                                redirect_append = (strcmp(argv[k], ">>") == 0);
+                                outfile = argv[k+1];
+                                argv[k] = NULL;
+
+
+                                break;
+                            }
+                        }
+
+                        //construccion con sin simbolos
+                        char *with_time[64];
+                        int i = 0;
+                        with_time[i] = "time";
+                        i++;
+
+                        for (int j = 3; argv[j] != NULL; j++) {
+                            with_time[i] = argv[j];
+                            i++;
+                        }
+                        with_time[i] = NULL;
+
+                        //almacena time
+                        int fd_archivo = fileno(archivo);
+                        if (dup2(fd_archivo, STDERR_FILENO) == -1) {
+                            perror("dup2 stderr");
+                            exit(1);
+                        }
+
+                        if (outfile) {
+                            int fd;
+                            if (redirect_append)
+                                fd = open(outfile, O_WRONLY | O_CREAT | O_APPEND, 0644);
+                            else
+                                fd = open(outfile, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+
+                            if (fd < 0) {
+                                perror("open");
+                                exit(1);
+                            }
+                            if (dup2(fd, STDOUT_FILENO) == -1) {
+                                perror("dup2 redir");
+                                exit(1);
+                            }
+                            close(fd);
+                        }
+
+                        execvp(with_time[0], with_time);
+                        perror("execvp");
+                        exit(1);
+
+                    }
+                    else if (argv[1] && strcmp(argv[1], "ejecutar") == 0){
+                        //ejecucion con tiempo limite
+
+                        int redirect_append = 0;
+                        char* outfile = NULL;
+
+                        for (int k = 3; argv[k]; k++) {
+                            if (strcmp(argv[k], ">") == 0 || strcmp(argv[k], ">>") == 0) {
+                                redirect_append = (strcmp(argv[k], ">>") == 0);
+                                outfile = argv[k+1];
+                                argv[k] = NULL;
+
+
+                                break;
+                            }
+                        }
+
+                        //construccion con sin simbolos
+                        char *with_time[64];
+                        int i = 0;
+                        with_time[i] = "time";
+                        i++;
+
+                        for (int j = 3; argv[j] != NULL; j++) {
+                            with_time[i] = argv[j];
+                            i++;
+                        }
+                        with_time[i] = NULL;
+
+
+                        int timemaximo = atoi(argv[2]); 
+                        pid_t pid = fork();
+                        if (pid == 0) {
+                            
+                            if (outfile) {
+                                int fd;
+                                if (redirect_append)
+                                    fd = open(outfile, O_WRONLY | O_CREAT | O_APPEND, 0644);
+                                else
+                                    fd = open(outfile, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+
+                                if (fd < 0) {
+                                    perror("open");
+                                    exit(1);
+                                }
+                                if (dup2(fd, STDOUT_FILENO) == -1) {
+                                    perror("dup2 redir");
+                                    exit(1);
+                                }
+                                close(fd);
+                            }
+
+                            execvp(with_time[0], with_time);
+                            perror("execvp");
+                            exit(1);
+
+                        } else if (pid > 0) {
+                            // padre espera el tiempo
+                            int waited = 0, status;
+                            while (waited < timemaximo) {
+                                if (waitpid(pid, &status, WNOHANG) != 0) break;
+                                sleep(1);
+                                waited++;
+                            }
+
+                            if (waited >= timemaximo) {
+                                printf("Tiempo maximo alcanzado\n");
+                                kill(pid, SIGKILL);
+                            }
+                        } else {
+                            perror("fork");
+                            exit(1);
+                        }
+
+
+                    }
+                    else{
+                        printf("Error: falta de parametros en miprof\n");
+                        printf("Uso correcto: miprof [ejec/ejecsave archivo/ejecutar maxtiempo] comando args\n");
+                        exit(1); 
+                    }
+                    
+                }
+                else{
+                    //si no se lee myprof
+
+                    int redirect_append = 0;
+                    char* outfile = NULL;
+
+                    for (int k = 0; argv[k]; k++) {
+                        if (strcmp(argv[k], ">") == 0 || strcmp(argv[k], ">>") == 0) {
+                            redirect_append = (strcmp(argv[k], ">>") == 0);
+                            outfile = argv[k+1];
+                            argv[k] = NULL;
+                            break;
+                        }
+                    }
+
+                    if (outfile) {
+                        int fd;
+                        if (redirect_append)
+                            fd = open(outfile, O_WRONLY | O_CREAT | O_APPEND, 0644);
+                        else
+                            fd = open(outfile, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+
+                        if (fd < 0) {
+                            perror("open");
+                            exit(1);
+                        }
+                        if (dup2(fd, STDOUT_FILENO) == -1) {
+                            perror("dup2 redir");
+                            exit(1);
+                        }
+                        close(fd);
+                    }
+
+                    execvp(argv[0], argv);
+                    perror("execvp");
+                    exit(1);
+
+
+                }
             }
         }
 
