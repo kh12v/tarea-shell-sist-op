@@ -146,7 +146,7 @@ int main() {
                         int redirect_append = 0;
                         char* outfile = NULL;
                         FILE *archivo; 
-                        char *nombre[] = argv[2];
+                        char *nombre = argv[2];
                         archivo = fopen(nombre, "a");
 
                         for (int k = 3; argv[k]; k++) {
