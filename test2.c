@@ -4,7 +4,9 @@
 #include <string.h>
 #include <unistd.h>
 #include <sys/wait.h>
-
+#include <signal.h>
+#include <sys/types.h>
+#include <sys/resource.h>
 
 char** parse_command(char *cmd) {
     char** argv = malloc(64 * sizeof(char*));
@@ -20,105 +22,148 @@ char** parse_command(char *cmd) {
     return argv;
 }
 
-// cat texto.txt | grep que | paste >> texto2.txt
+void print_mem_peak(FILE *destino) {
+    struct rusage uso;
+    if (getrusage(RUSAGE_CHILDREN, &uso) == 0) {
+        fprintf(destino, "Peak memoria residente: %ld KB\n", uso.ru_maxrss);
+    }
+}
 
 int main() {
     char input[1024];
+    char inputCopy[1024];
 
     while (1) {
         printf("Comando: ");
         if (!fgets(input, sizeof(input), stdin)) break;
 
-        if (strncmp(input, "exit", 4) == 0) break;
+        if (strncmp(input, "exit", 4) == 0) exit(0);
 
-        // Separating pipes
-        char* commands[64];
-        int ncmds = 0;
-        char* token = strtok(input, "|");
-        while (token != NULL) {
-            commands[ncmds++] = token;
-            token = strtok(NULL, "|");
-        }
+        input[strcspn(input, "\n")] = 0;
 
-        // Creating pipes
-        int pipes[2 * (ncmds - 1)];
-        for (int i = 0; i < ncmds - 1; i++) {
-            if (pipe(pipes + i*2) == -1) {
-                perror("pipe");
-                exit(1);
-            }
-        }
 
-        // Executing commands
-        for (int i = 0; i < ncmds; i++) {
-            pid_t pid = fork();
-            if (pid == 0) {
-                if (i > 0) {
-                    if (dup2(pipes[(i-1)*2], STDIN_FILENO) == -1) {
-                        perror("dup2 stdin");
+        pid_t pid = fork();
+        if (pid == 0) {
+            strcpy(inputCopy, input);
+            char** argv = parse_command(inputCopy);
+
+            if(argv[0] && strcmp(argv[0], "miprof") == 0){
+                //seccion con myprof
+                if(argv[1] && strcmp(argv[1], "ejec") == 0){
+                    //muestra a pantalla
+
+                    //construccion con sin simbolos
+                    char command[1024] = "time";
+                    for (int j = 2; argv[j] != NULL; j++) {
+                        strcat(command, " ");
+                        strcat(command, argv[j]);
+                    }
+
+                    pid_t cpid = fork();
+                    if (cpid == 0) {
+                        execlp("sh", "sh", "-c", command, (char *)NULL);
+                        perror("execlp");
+                        exit(1);
+                    } else {
+                        waitpid(cpid, NULL, 0);
+                        print_mem_peak(stdout);
+                        exit(0);
+                    }
+                }
+                else if (argv[1] && strcmp(argv[1], "ejecsave") == 0){
+                    //guarda en un archivo
+
+                    FILE *archivo; 
+                    char *nombre = argv[2];
+                    archivo = fopen(nombre, "a");
+
+                    //construccion con sin simbolos
+                    char command[1024] = "time";
+                    for (int j = 2; argv[j] != NULL; j++) {
+                        strcat(command, " ");
+                        strcat(command, argv[j]);
+                    }
+
+                    //lo mismo que el anterior
+                    pid_t cpid = fork();
+                    if (cpid == 0) {
+                        //almacena time
+                        int fd_archivo = fileno(archivo);
+                        if (dup2(fd_archivo, STDERR_FILENO) == -1) {
+                            perror("dup2 stderr");
+                            exit(1);
+                        }
+                        
+                        execlp("sh", "sh", "-c", command, (char *)NULL);
+                        perror("execlp");
+                        exit(1);
+                    } else {
+                        waitpid(cpid, NULL, 0);
+                        // Peak al archivo
+                        print_mem_peak(archivo);
+                        fclose(archivo);
+                        exit(0);
+                    }
+
+                }
+                else if (argv[1] && strcmp(argv[1], "ejecutar") == 0){
+                    //ejecucion con tiempo limite
+
+                    //construccion con sin simbolos
+                    char command[1024] = "time";
+                    for (int j = 3; argv[j] != NULL; j++) {
+                        strcat(command, " ");
+                        strcat(command, argv[j]);
+                    }
+
+                    int timemaximo = atoi(argv[2]); 
+                    pid_t pid = fork();
+                    if (pid == 0) {
+                        execlp("sh", "sh", "-c", command, (char *)NULL);
+                        perror("execlp");
+                        exit(1);
+                    } else if (pid > 0) {
+                        // padre espera el tiempo
+                        int waited = 0, status;
+                        while (waited < timemaximo) {
+                            if (waitpid(pid, &status, WNOHANG) != 0) break;
+                            sleep(1);
+                            waited++;
+                        }
+
+                        if (waited >= timemaximo) {
+                            printf("Tiempo maximo alcanzado\n");
+                            kill(pid, SIGKILL);
+                            exit(0);
+                        }
+                        //si no se mata el proseso muestra info a pantalla
+                        else{
+                            print_mem_peak(stdout);
+                            exit(0);
+                        }
+                    } else {
+                        perror("fork");
                         exit(1);
                     }
+
+
+                }
+                else{
+                    printf("Error: falta de parametros en miprof\n");
+                    printf("Uso correcto: miprof [ejec/ejecsave archivo/ejecutar maxtiempo] comando args\n");
+                    exit(1); 
                 }
                 
-                if (i < ncmds - 1) {
-                    if (dup2(pipes[i*2 + 1], STDOUT_FILENO) == -1) {
-                        perror("dup2 stdout");
-                        exit(1);
-                    }
-                }
+            }
+            else{
+                //si no se lee myprof
 
-                // Closing pipes
-                for (int j = 0; j < 2*(ncmds-1); j++) {
-                    close(pipes[j]);
-                }
-
-                char** argv = parse_command(commands[i]);
-
-                int redirect_append = 0;
-                char* outfile = NULL;
-
-                for (int k = 0; argv[k]; k++) {
-                    if (strcmp(argv[k], ">") == 0 || strcmp(argv[k], ">>") == 0) {
-                        redirect_append = (strcmp(argv[k], ">>") == 0);
-                        outfile = argv[k+1];
-                        argv[k] = NULL;
-                        break;
-                    }
-                }
-
-                if (outfile) {
-                    int fd;
-                    if (redirect_append)
-                        fd = open(outfile, O_WRONLY | O_CREAT | O_APPEND, 0644);
-                    else
-                        fd = open(outfile, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-
-                    if (fd < 0) {
-                        perror("open");
-                        exit(1);
-                    }
-                    if (dup2(fd, STDOUT_FILENO) == -1) {
-                        perror("dup2 redir");
-                        exit(1);
-                    }
-                    close(fd);
-                }
-
-                execvp(argv[0], argv);
+                execlp("sh", "sh", "-c", input, NULL);
                 perror("execvp");
                 exit(1);
             }
         }
-
-        // Closing pipes
-        for (int i = 0; i < 2*(ncmds-1); i++) {
-            close(pipes[i]);
-        }
-
-        // Waiting children
-        for (int i = 0; i < ncmds; i++) {
-            wait(NULL);
-        }
+        wait(NULL);
     }
 
     return 0;

@@ -1,0 +1,10 @@
+time: cannot run results.txt: No such file or directory
+Command exited with non-zero status 127
+0.00user 0.01system 0:00.20elapsed 6%CPU (0avgtext+0avgdata 960maxresident)k
+0inputs+0outputs (0major+141minor)pagefaults 0swaps
+Peak memoria residente: 1920 KB
+time: cannot run results.txt: No such file or directory
+Command exited with non-zero status 127
+0.00user 0.00system 0:00.17elapsed 4%CPU (0avgtext+0avgdata 960maxresident)k
+0inputs+0outputs (0major+142minor)pagefaults 0swaps
+Peak memoria residente: 1920 KB
