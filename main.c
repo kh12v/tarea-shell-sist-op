@@ -71,12 +71,21 @@ int main() {
                     }
                 }
                 else if (argv[1] && strcmp(argv[1], "ejecsave") == 0){
+                    if (argv[2] == NULL || argv[3] == NULL) {
+                        printf("Error: falta de parametros en miprof\n");
+                        printf("Uso correcto: miprof ejecsave archivo comando args\n");
+                        exit(1);
+                    }
+                    
                     //guarda en un archivo
-
                     FILE *archivo; 
                     char *nombre = argv[2];
                     archivo = fopen(nombre, "a");
-
+                    if (!archivo) {
+                        perror("fopen");
+                        exit(1);
+                    }
+                    
                     //construccion con sin simbolos
                     char command[1024] = "time";
                     for (int j = 2; argv[j] != NULL; j++) {
@@ -117,35 +126,37 @@ int main() {
                     }
 
                     int timemaximo = atoi(argv[2]); 
-                    pid_t pid = fork();
-                    if (pid == 0) {
+                    pid_t cpid = fork();
+                    if (cpid == 0) {
                         execlp("sh", "sh", "-c", command, (char *)NULL);
                         perror("execlp");
                         exit(1);
-                    } else if (pid > 0) {
+                    } else if (cpid > 0) {
                         // padre espera el tiempo
                         int waited = 0, status;
                         while (waited < timemaximo) {
-                            if (waitpid(pid, &status, WNOHANG) != 0) break;
+                            pid_t result = waitpid(cpid, &status, WNOHANG);
+                            if (result == -1) {
+                                perror("waitpid");
+                                exit(1);
+                            } else if (result > 0) {
+                                // El proceso terminó antes del tiempo
+                                print_mem_peak(stdout);
+                                exit(0);
+                            }
                             sleep(1);
                             waited++;
                         }
 
-                        if (waited >= timemaximo) {
-                            printf("Tiempo maximo alcanzado\n");
-                            kill(pid, SIGKILL);
-                            exit(0);
-                        }
-                        //si no se mata el proseso muestra info a pantalla
-                        else{
-                            print_mem_peak(stdout);
-                            exit(0);
-                        }
+                        printf("Tiempo maximo alcanzado\n");
+                        kill(cpid, SIGKILL);
+                        waitpid(cpid, NULL, 0); // Espera a que termine
+                        exit(0);
+
                     } else {
                         perror("fork");
                         exit(1);
                     }
-
 
                 }
                 else{
